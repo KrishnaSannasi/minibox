@@ -100,6 +100,8 @@ use core::mem::MaybeUninit;
 use std::boxed::Box;
 
 mod default;
+#[cfg(feature = "serde")]
+mod serde;
 mod trait_impls;
 
 pub use default::{zeroed, Zeroable};
