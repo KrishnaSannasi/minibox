@@ -17,6 +17,7 @@ std = []
 [dependencies.serde]
 version = '1'
 optional = true
+no-default-features = true
 
 [dev-dependencies]
 static-alloc = '0.2'

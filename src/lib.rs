@@ -268,7 +268,7 @@ impl<T> MiniBox<T> {
     ///
     /// if `T` is not zero-sized, this function will panic
     #[inline]
-    pub const fn new_zerosized(value: T) -> Self {
+    pub const fn new_zst(value: T) -> Self {
         [()][Self::size_class() as usize];
 
         // core::mem::forget is not a const-fn
@@ -300,34 +300,23 @@ impl<T> MiniBox<T> {
 
     /// Create a new uninitialized `MiniBox<T>`
     pub fn new_uninit() -> MiniBox<MaybeUninit<T>> {
-        match Self::size_class() {
-            SizeClass::Zero | SizeClass::Inline => Self::new_zeroed_inline(),
-            SizeClass::Boxed => {
-                use std::alloc::{alloc, handle_alloc_error, Layout};
-
-                let layout = Layout::new::<T>();
-                let ptr = unsafe { alloc(layout).cast::<MaybeUninit<T>>() };
-                if ptr.is_null() {
-                    handle_alloc_error(layout);
-                }
-
-                MiniBox {
-                    ptr: MaybeUninit::new(ptr),
-                    drop: PhantomData,
-                }
-            }
-        }
+        Self::with_alloc(std::alloc::alloc)
     }
 
     /// Create a new uninitialized `MiniBox<T>`
-    pub fn new_zeroed_unchecked() -> MiniBox<MaybeUninit<T>> {
+    pub fn new_zeroed() -> MiniBox<MaybeUninit<T>> {
+        Self::with_alloc(std::alloc::alloc_zeroed)
+    }
+
+    #[inline]
+    fn with_alloc(alloc: unsafe fn(std::alloc::Layout) -> *mut u8) -> MiniBox<MaybeUninit<T>> {
         match Self::size_class() {
             SizeClass::Zero | SizeClass::Inline => Self::new_zeroed_inline(),
             SizeClass::Boxed => {
-                use std::alloc::{alloc_zeroed, handle_alloc_error, Layout};
+                use std::alloc::{handle_alloc_error, Layout};
 
                 let layout = Layout::new::<T>();
-                let ptr = unsafe { alloc_zeroed(layout).cast::<MaybeUninit<T>>() };
+                let ptr = unsafe { alloc(layout).cast::<MaybeUninit<T>>() };
                 if ptr.is_null() {
                     handle_alloc_error(layout);
                 }
@@ -482,15 +471,15 @@ mod test {
     #[should_panic]
     #[cfg(not(miri))]
     pub fn nonzerosized_const() {
-        MiniBox::new_zerosized(0);
+        MiniBox::new_zst(0);
     }
 
     #[test]
     pub fn zst() {
-        let bx = MiniBox::new_zerosized(());
+        let bx = MiniBox::new_zst(());
         assert_eq!(*bx, ());
 
-        let bx = MiniBox::new_zerosized(OverAlignedZeroSized);
+        let bx = MiniBox::new_zst(OverAlignedZeroSized);
         assert!(matches!(*bx, OverAlignedZeroSized));
     }
 
@@ -505,7 +494,7 @@ mod test {
         let bx = MiniBox::new([3_u8; 32]);
         assert_eq!(*bx, [3; 32]);
 
-        let bx = MiniBox::<[u8; 32]>::new_zeroed();
+        let bx = MiniBox::<[u8; 32]>::zeroed();
         assert_eq!(*bx, [0; 32]);
     }
 
@@ -514,7 +503,7 @@ mod test {
         let bx = MiniBox::new(3_u8);
         assert_eq!(*bx, 3);
 
-        let bx = MiniBox::<u8>::new_zeroed();
+        let bx = MiniBox::<u8>::zeroed();
         assert_eq!(*bx, 0);
     }
 
@@ -523,7 +512,7 @@ mod test {
         let bx = MiniBox::new(3_usize);
         assert_eq!(*bx, 3);
 
-        let bx = MiniBox::<usize>::new_zeroed();
+        let bx = MiniBox::<usize>::zeroed();
         assert_eq!(*bx, 0);
     }
 
@@ -747,4 +736,9 @@ mod test_drop {
         drop(raw_value);
         assert_eq!(counter.get(), 16);
     }
+}
+
+#[doc(hidden)]
+pub fn asm() -> MiniBox<MaybeUninit<[u8; 1024]>> {
+    MiniBox::new_zeroed()
 }

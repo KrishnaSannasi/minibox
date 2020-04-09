@@ -22,8 +22,8 @@ impl<T: Zeroable + Default> Default for MiniBox<T> {
 
 impl<T: Zeroable> MiniBox<T> {
     /// intializes a new `MiniBox` with
-    pub fn new_zeroed() -> Self {
-        unsafe { Self::new_zeroed_unchecked().assume_init() }
+    pub fn zeroed() -> Self {
+        unsafe { Self::new_zeroed().assume_init() }
     }
 }
 
