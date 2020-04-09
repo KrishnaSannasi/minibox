@@ -27,6 +27,11 @@ impl<T: Zeroable> MiniBox<T> {
     }
 }
 
+/// a safe wrapper of core::mem::zeroed
+pub fn zeroed<T: Zeroable>() -> T {
+    unsafe { core::mem::zeroed() }
+}
+
 /// a type that is safe to be zeroed
 ///
 /// # Safety
@@ -68,6 +73,38 @@ unsafe impl Zeroable for i32 {}
 unsafe impl Zeroable for i64 {}
 unsafe impl Zeroable for i128 {}
 unsafe impl Zeroable for isize {}
+
+// non-zero
+
+unsafe impl Zeroable for Option<std::num::NonZeroU8> {}
+unsafe impl Zeroable for Option<std::num::NonZeroU16> {}
+unsafe impl Zeroable for Option<std::num::NonZeroU32> {}
+unsafe impl Zeroable for Option<std::num::NonZeroU64> {}
+unsafe impl Zeroable for Option<std::num::NonZeroU128> {}
+unsafe impl Zeroable for Option<std::num::NonZeroUsize> {}
+unsafe impl Zeroable for Option<std::num::NonZeroI8> {}
+unsafe impl Zeroable for Option<std::num::NonZeroI16> {}
+unsafe impl Zeroable for Option<std::num::NonZeroI32> {}
+unsafe impl Zeroable for Option<std::num::NonZeroI64> {}
+unsafe impl Zeroable for Option<std::num::NonZeroI128> {}
+unsafe impl Zeroable for Option<std::num::NonZeroIsize> {}
+
+unsafe impl Zeroable for core::sync::atomic::AtomicU8 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicU16 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicU32 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicU64 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicUsize {}
+unsafe impl Zeroable for core::sync::atomic::AtomicI8 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicI16 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicI32 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicI64 {}
+unsafe impl Zeroable for core::sync::atomic::AtomicIsize {}
+
+// raw pointers
+
+unsafe impl<T> Zeroable for core::sync::atomic::AtomicPtr<T> {}
+unsafe impl<T: ?Sized> Zeroable for *const T {}
+unsafe impl<T: ?Sized> Zeroable for *mut T {}
 
 // non-null
 unsafe impl<T: ?Sized> Zeroable for Option<&T> {}

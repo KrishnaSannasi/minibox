@@ -102,7 +102,7 @@ use std::boxed::Box;
 mod default;
 mod trait_impls;
 
-pub use default::Zeroable;
+pub use default::{zeroed, Zeroable};
 
 /// A box equivalent that stores the value inline if it is layout compatible with a pointer
 ///
