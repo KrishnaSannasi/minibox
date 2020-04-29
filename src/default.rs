@@ -42,6 +42,7 @@ pub unsafe trait Zeroable {}
 
 // arrays
 
+#[allow(unused)]
 macro_rules! array {
     ($($size:expr),*) => {
         $(unsafe impl<T: Zeroable> Zeroable for [T; $size] {})*

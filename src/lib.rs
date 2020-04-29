@@ -108,6 +108,10 @@ mod trait_impls;
 
 pub use default::{zeroed, Zeroable};
 
+const fn dangling<T>() -> *mut T {
+    core::mem::align_of::<T>() as *mut T
+}
+
 /// A box equivalent that stores the value inline if it is layout compatible with a pointer
 ///
 /// see crate docs for more information
@@ -122,7 +126,7 @@ pub struct MiniBox<T> {
 /// In order for this `MiniPtr` to be safe to use, it must abide by the following
 /// rules based on `T`'s `SizeClass`
 ///
-/// * `SizeClass::Zero` - the pointer must be initialized and aligned
+/// * `SizeClass::Zero` - the pointer has no requirements (may even be uninitialized)
 /// * `SizeClass::Inline` - the pointer must be store an initialized `T`
 /// * `SizeClass::Boxed` - the pointer must be store a pointer to a heap
 ///     allocated `T` that is allocated with the global allocator
@@ -205,14 +209,20 @@ impl<T> MiniPtr<T> {
         mem::transmute(ptr)
     }
 
-    /// Get a word from the underlying pointer
+    /// Get a word from the underlying pointer, note this may not be the pointer you provided in `from_raw`
+    /// if `T`'s `SizeClass` is `Zero`
     ///
     /// # Safety
     ///
-    /// the underlying pointer must not contain any uninitialized bytes
+    /// One of
+    /// * `T`'s `SizeClass` is `Zero`
+    /// * the underlying pointer must not contain any uninitialized bytes
     #[inline]
     pub unsafe fn to_raw(self) -> usize {
-        self.0.assume_init() as usize
+        match Self::SIZE_CLASS {
+            SizeClass::Zero => core::mem::align_of::<T>(),
+            SizeClass::Inline | SizeClass::Boxed => self.0.assume_init() as usize,
+        }
     }
 
     /// Get a reference to the underlying value
@@ -223,8 +233,9 @@ impl<T> MiniPtr<T> {
     #[inline]
     pub unsafe fn as_ref(&self) -> &T {
         match Self::SIZE_CLASS {
-            SizeClass::Inline => &*self.0.as_ptr().cast::<T>(),
-            SizeClass::Zero | SizeClass::Boxed => &*self.0.assume_init(),
+            SizeClass::Zero => &*dangling::<T>(),
+            SizeClass::Inline => &*(self as *const Self as *const T),
+            SizeClass::Boxed => &*self.0.assume_init(),
         }
     }
 
@@ -236,8 +247,9 @@ impl<T> MiniPtr<T> {
     #[inline]
     pub unsafe fn as_mut(&mut self) -> &mut T {
         match Self::SIZE_CLASS {
-            SizeClass::Inline => &mut *self.0.as_mut_ptr().cast::<T>(),
-            SizeClass::Zero | SizeClass::Boxed => &mut *(self.0.assume_init() as *mut T),
+            SizeClass::Zero => &mut *dangling::<T>(),
+            SizeClass::Inline => &mut *(self as *mut Self as *mut T),
+            SizeClass::Boxed => &mut *(self.0.assume_init() as *mut T),
         }
     }
 }
@@ -280,7 +292,7 @@ impl<T> MiniBox<T> {
         core::mem::ManuallyDrop::new(value);
 
         Self {
-            ptr: MaybeUninit::new(core::mem::align_of::<T>() as *const T),
+            ptr: MaybeUninit::uninit(),
             drop: PhantomData,
         }
     }
@@ -292,10 +304,8 @@ impl<T> MiniBox<T> {
     /// if the `SizeClass` of `T` is `SizeClass::Boxed`, this function will panic
     #[inline]
     pub const fn new_zeroed_inline() -> MiniBox<MaybeUninit<T>> {
-        let ptr = [
-            MaybeUninit::new(core::mem::align_of::<T>() as *const MaybeUninit<T>),
-            MaybeUninit::new(core::ptr::null()),
-        ][Self::SIZE_CLASS as usize];
+        let ptr =
+            [MaybeUninit::uninit(), MaybeUninit::new(core::ptr::null())][Self::SIZE_CLASS as usize];
 
         MiniBox {
             ptr,
@@ -361,11 +371,11 @@ impl<T> MiniBox<T> {
     /// Consume the `MiniBox` returning the underlying data.
     pub fn into_inner(bx: Self) -> T {
         unsafe {
-            let MiniPtr(ptr) = Self::into_ptr(bx);
+            let ptr = Self::into_ptr(bx);
             match Self::SIZE_CLASS {
-                SizeClass::Zero => (ptr.assume_init() as *mut T).read(),
-                SizeClass::Inline => ptr.as_ptr().cast::<T>().read(),
-                SizeClass::Boxed => *Box::from_raw(ptr.assume_init() as *mut T),
+                SizeClass::Zero => dangling::<T>().read(),
+                SizeClass::Inline => core::ptr::read(ptr.as_ref()),
+                SizeClass::Boxed => *Box::from_raw(ptr.0.assume_init() as *mut T),
             }
         }
     }
@@ -408,7 +418,7 @@ impl<T> Drop for MiniBox<T> {
     fn drop(&mut self) {
         unsafe {
             match Self::SIZE_CLASS {
-                SizeClass::Zero => (self.ptr.assume_init() as *mut T).drop_in_place(),
+                SizeClass::Zero => dangling::<T>().drop_in_place(),
                 SizeClass::Inline => self.ptr.as_mut_ptr().cast::<T>().drop_in_place(),
                 SizeClass::Boxed => {
                     dbg!();
@@ -426,8 +436,9 @@ impl<T> core::ops::Deref for MiniBox<T> {
     fn deref(&self) -> &T {
         unsafe {
             match Self::SIZE_CLASS {
-                SizeClass::Inline => &*self.ptr.as_ptr().cast::<T>(),
-                SizeClass::Zero | SizeClass::Boxed => &*self.ptr.assume_init(),
+                SizeClass::Zero => &*dangling::<T>(),
+                SizeClass::Inline => &*(self as *const Self as *const T),
+                SizeClass::Boxed => &*self.ptr.assume_init(),
             }
         }
     }
@@ -438,8 +449,9 @@ impl<T> core::ops::DerefMut for MiniBox<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe {
             match Self::SIZE_CLASS {
-                SizeClass::Inline => &mut *self.ptr.as_mut_ptr().cast::<T>(),
-                SizeClass::Zero | SizeClass::Boxed => &mut *(self.ptr.assume_init() as *mut T),
+                SizeClass::Zero => &mut *dangling::<T>(),
+                SizeClass::Inline => &mut *(self as *mut Self as *mut T),
+                SizeClass::Boxed => &mut *(self.ptr.assume_init() as *mut T),
             }
         }
     }
@@ -741,9 +753,4 @@ mod test_drop {
         drop(raw_value);
         assert_eq!(counter.get(), 16);
     }
-}
-
-#[doc(hidden)]
-pub fn asm() -> MiniBox<MaybeUninit<[u8; 1024]>> {
-    MiniBox::new_zeroed()
 }
