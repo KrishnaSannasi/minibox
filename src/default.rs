@@ -16,7 +16,7 @@ impl<T: Default> Default for MiniBox<T> {
 #[cfg(feature = "nightly")]
 impl<T: Zeroable + Default> Default for MiniBox<T> {
     fn default() -> Self {
-        Self::new_zeroed()
+        Self::zeroed()
     }
 }
 

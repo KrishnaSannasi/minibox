@@ -7,6 +7,8 @@
         backtrace,
         unboxed_closures,
         fn_traits,
+        const_fn,
+        const_panic,
         const_if_match,
         const_transmute,
         specialization,
@@ -186,11 +188,8 @@ impl SizeClass {
 }
 
 impl<T> MiniPtr<T> {
-    /// Get the size class for `T`
-    #[inline]
-    pub const fn size_class() -> SizeClass {
-        SizeClass::new::<T>()
-    }
+    /// The size class for `T`
+    pub const SIZE_CLASS: SizeClass = SizeClass::new::<T>();
 
     /// Create a new `MiniPtr` from the given raw pointer
     #[cfg(not(feature = "nightly"))]
@@ -223,7 +222,7 @@ impl<T> MiniPtr<T> {
     /// The safety rules described in the type-level documentation must be followed
     #[inline]
     pub unsafe fn as_ref(&self) -> &T {
-        match Self::size_class() {
+        match Self::SIZE_CLASS {
             SizeClass::Inline => &*self.0.as_ptr().cast::<T>(),
             SizeClass::Zero | SizeClass::Boxed => &*self.0.assume_init(),
         }
@@ -236,7 +235,7 @@ impl<T> MiniPtr<T> {
     /// The safety rules described in the type-level documentation must be followed
     #[inline]
     pub unsafe fn as_mut(&mut self) -> &mut T {
-        match Self::size_class() {
+        match Self::SIZE_CLASS {
             SizeClass::Inline => &mut *self.0.as_mut_ptr().cast::<T>(),
             SizeClass::Zero | SizeClass::Boxed => &mut *(self.0.assume_init() as *mut T),
         }
@@ -244,11 +243,8 @@ impl<T> MiniPtr<T> {
 }
 
 impl<T> MiniBox<T> {
-    /// Get the size class for `T`
-    #[inline]
-    pub const fn size_class() -> SizeClass {
-        SizeClass::new::<T>()
-    }
+    /// The size class for `T`
+    pub const SIZE_CLASS: SizeClass = SizeClass::new::<T>();
 
     /// Create a new `MiniBox<T>`
     #[inline]
@@ -269,7 +265,16 @@ impl<T> MiniBox<T> {
     /// if `T` is not zero-sized, this function will panic
     #[inline]
     pub const fn new_zst(value: T) -> Self {
-        [()][Self::size_class() as usize];
+        #[cfg(not(feature = "nightly"))]
+        [()][Self::SIZE_CLASS as usize];
+
+        #[cfg(feature = "nightly")]
+        {
+            match Self::SIZE_CLASS {
+                SizeClass::Zero => (),
+                _ => panic!("The size class of `T` must be `Zero`"),
+            }
+        }
 
         // core::mem::forget is not a const-fn
         core::mem::ManuallyDrop::new(value);
@@ -290,7 +295,7 @@ impl<T> MiniBox<T> {
         let ptr = [
             MaybeUninit::new(core::mem::align_of::<T>() as *const MaybeUninit<T>),
             MaybeUninit::new(core::ptr::null()),
-        ][Self::size_class() as usize];
+        ][Self::SIZE_CLASS as usize];
 
         MiniBox {
             ptr,
@@ -310,7 +315,7 @@ impl<T> MiniBox<T> {
 
     #[inline]
     fn with_alloc(alloc: unsafe fn(std::alloc::Layout) -> *mut u8) -> MiniBox<MaybeUninit<T>> {
-        match Self::size_class() {
+        match Self::SIZE_CLASS {
             SizeClass::Zero | SizeClass::Inline => Self::new_zeroed_inline(),
             SizeClass::Boxed => {
                 use std::alloc::{handle_alloc_error, Layout};
@@ -357,7 +362,7 @@ impl<T> MiniBox<T> {
     pub fn into_inner(bx: Self) -> T {
         unsafe {
             let MiniPtr(ptr) = Self::into_ptr(bx);
-            match Self::size_class() {
+            match Self::SIZE_CLASS {
                 SizeClass::Zero => (ptr.assume_init() as *mut T).read(),
                 SizeClass::Inline => ptr.as_ptr().cast::<T>().read(),
                 SizeClass::Boxed => *Box::from_raw(ptr.assume_init() as *mut T),
@@ -402,7 +407,7 @@ impl<T> MiniBox<MaybeUninit<T>> {
 impl<T> Drop for MiniBox<T> {
     fn drop(&mut self) {
         unsafe {
-            match Self::size_class() {
+            match Self::SIZE_CLASS {
                 SizeClass::Zero => (self.ptr.assume_init() as *mut T).drop_in_place(),
                 SizeClass::Inline => self.ptr.as_mut_ptr().cast::<T>().drop_in_place(),
                 SizeClass::Boxed => {
@@ -420,7 +425,7 @@ impl<T> core::ops::Deref for MiniBox<T> {
     #[inline]
     fn deref(&self) -> &T {
         unsafe {
-            match Self::size_class() {
+            match Self::SIZE_CLASS {
                 SizeClass::Inline => &*self.ptr.as_ptr().cast::<T>(),
                 SizeClass::Zero | SizeClass::Boxed => &*self.ptr.assume_init(),
             }
@@ -432,7 +437,7 @@ impl<T> core::ops::DerefMut for MiniBox<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
         unsafe {
-            match Self::size_class() {
+            match Self::SIZE_CLASS {
                 SizeClass::Inline => &mut *self.ptr.as_mut_ptr().cast::<T>(),
                 SizeClass::Zero | SizeClass::Boxed => &mut *(self.ptr.assume_init() as *mut T),
             }

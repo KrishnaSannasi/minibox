@@ -201,7 +201,7 @@ impl<T: Clone> From<&T> for MiniBox<T> {
 
 impl<T> From<Box<T>> for MiniBox<T> {
     fn from(value: Box<T>) -> Self {
-        match Self::size_class() {
+        match Self::SIZE_CLASS {
             SizeClass::Inline => Self::new(*value),
             SizeClass::Zero | SizeClass::Boxed => Self {
                 ptr: core::mem::MaybeUninit::new(Box::into_raw(value)),
