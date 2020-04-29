@@ -131,7 +131,7 @@ pub struct MiniBox<T> {
 /// * `SizeClass::Boxed` - the pointer must be store a pointer to a heap
 ///     allocated `T` that is allocated with the global allocator
 #[repr(transparent)]
-pub struct MiniPtr<T>(pub MaybeUninit<*const T>);
+pub struct MiniPtr<T>(MaybeUninit<*const T>);
 
 impl<T> Copy for MiniPtr<T> {}
 impl<T> Clone for MiniPtr<T> {
@@ -195,34 +195,27 @@ impl<T> MiniPtr<T> {
     /// The size class for `T`
     pub const SIZE_CLASS: SizeClass = SizeClass::new::<T>();
 
-    /// Create a new `MiniPtr` from the given raw pointer
-    #[cfg(not(feature = "nightly"))]
-    #[inline]
-    pub unsafe fn from_raw(ptr: usize) -> Self {
-        mem::transmute(ptr)
+    /// Create a new uninitialized `MiniPtr`
+    pub const fn uninit() -> Self {
+        Self(MaybeUninit::uninit())
     }
 
     /// Create a new `MiniPtr` from the given raw pointer
-    #[cfg(feature = "nightly")]
-    #[inline]
-    pub const unsafe fn from_raw(ptr: usize) -> Self {
-        mem::transmute(ptr)
+    pub const fn from_raw(raw: *mut T) -> Self {
+        Self(MaybeUninit::new(raw))
     }
 
-    /// Get a word from the underlying pointer, note this may not be the pointer you provided in `from_raw`
-    /// if `T`'s `SizeClass` is `Zero`
+    /// Get the underlying pointer
+    ///
+    /// note: this is not a real pointer, so you cannot dereference it. In order to
+    /// use this pointer, you must pass it back to `MiniPtr::from_raw`
     ///
     /// # Safety
     ///
-    /// One of
-    /// * `T`'s `SizeClass` is `Zero`
-    /// * the underlying pointer must not contain any uninitialized bytes
+    /// the underlying pointer must not contain any uninitialized bytes
     #[inline]
-    pub unsafe fn to_raw(self) -> usize {
-        match Self::SIZE_CLASS {
-            SizeClass::Zero => core::mem::align_of::<T>(),
-            SizeClass::Inline | SizeClass::Boxed => self.0.assume_init() as usize,
-        }
+    pub unsafe fn to_raw(self) -> *mut T {
+        self.0.assume_init() as *mut T
     }
 
     /// Get a reference to the underlying value
