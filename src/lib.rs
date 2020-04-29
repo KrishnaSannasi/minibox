@@ -48,7 +48,7 @@
 //!
 //! ```rust
 //! # use minibox::MiniBox;
-//! let bx = MiniBox::<[u8; 1024]>::new_zeroed();
+//! let bx = MiniBox::<[u8; 1024]>::zeroed();
 //! assert!(bx.iter().all(|&x| x == 0));
 //!
 //! let addr_0 = &*bx as *const [u8; 1024] as usize;
